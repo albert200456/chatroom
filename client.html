@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>Let's Chat!</title>
+    <style>
+      body{ font:18px/24px Verdana, sans-serif; }
+      h1 {font-size: 24px; font-weight: bold;}
+       .user_join {margin: auto;  position: fixed; top: 30%; left: 30%; width: 60%; height: 10%;}
+       .leave_room { margin: auto; width: 30%; position: fixed; bottom: 10px; right: 30px; width: 150px; padding: 10px;}
+       .users {margin: auto; width: 20%; height: 50%; position: fixed; right: 20px; border: 3px solid; overflow-y:auto; text-align: center; padding: 0 10px 50px 10px;}
+       .rooms {width: 50%; height: 70%; position: fixed; left: 20px; overflow-y:auto; border: 3px solid; padding: 10px;}
+       .msgs {width: 70%; height: 77%; position: fixed; left: 10px; overflow-y:auto; padding: 10px; border: 3px solid;}
+       .send_msg {float: right; width: 80%; position: fixed; bottom: 10px; left: 10px; padding: 10px; border: 3px solid;}
+       .show {margin: 20px;}
+       .room_manage {width: 40%; height: 50%; position: fixed; right: 20px; border: 3px solid; padding: 10px;}
+       .user_manage {margin: auto; width: 15%; height: 18%; position: fixed; right: 20px; bottom: 120px; border: 3px solid; padding: 10px;}
+       #send_msg_btn, #join_room_btn, #leave_room_btn, #join_btn, #add_public_room_btn, #add_private_room_btn, #join_public_room_btn, #join_private_room_btn, #remove_user_btn, #ban_user_btn {text-align: center; font-weight: bold;}
+       #msg_input {width: 60%; height: 25px;}
+       #name {width: 50%; height: 25px;}
+       #join_public_room_name, #join_private_room_name, #join_room_password, #add_public_room_name, #add_private_room_name, #add_room_password {width:150px; height: 25px;}
+       #remove_user_name, #ban_user_name {width:80px; height: 20px;}
+       #private_msg_username {width: 60px; height: 25px;}
+    </style>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.12.0/jquery.min.js"></script>
+    <script type ="text/javascript">
+    
+
+      $(document).ready(function(){ 
+        // initialization 
+        var socketio = io.connect();
+        $(".send_msg").hide();
+        $(".room_manage").hide();
+        $(".leave_room").hide();
+        $(".users").hide();
+        $(".rooms").hide();
+        $(".msgs").hide();
+        $(".user_manage").hide();
+        $("#name").focus();
+        $("form").submit(function(event){
+            event.preventDefault();
+        });
+
+        // allow user to join chat room lobby
+        $("#join_btn").click(function(){
+          joinUser(socketio);
+        });
+        $("#name").keypress(function(e){
+          if(e.which == 13)
+            joinUser(socketio);
+        });
+
+        // allow user to add a public chat room
+        $("#add_public_room_btn").click(function(){
+          var room_name = $("#add_public_room_name").val();
+          if (/\S/.test(room_name)) {
+            socketio.emit("add_room", room_name, "");
+            $(".user_manage").show();
+            enterRoom();
+            ready = true;
+          } else {
+            alert("Enter a room name first!");
+          }
+        });
+        // allow user to add a private chat room
+        $("#add_private_room_btn").click(function(){
+          var room_name = $("#add_private_room_name").val();
+          var pwd = $("#add_room_password").val();
+          if (/\S/.test(room_name)) {
+            socketio.emit("add_room", room_name, pwd);
+            $(".user_manage").show();
+            enterRoom();
+            ready = true;
+          } else {
+            alert("Enter a room name first!");
+          }
+        });
+
+        // allow user to join a public chat room
+        $("#join_public_room_btn").click(function(){
+          var room_name = $("#join_public_room_name").val();
+          if (/\S/.test(room_name)) {
+            socketio.emit("join_room", room_name, "");
+            socketio.on("check_ban_user", function(banned) {
+              if (banned) {
+                alert("You are banned from this chat room!");
+                return;
+              }
+            });
+            socketio.on("check_room_avail", function(avail){
+              if (avail) {
+                enterRoom();
+                ready = true;
+              } else {
+                alert("Invalid room name!");
+              }
+            });
+          } else {
+            alert("Enter a room name first!");
+          }
+        });
+        // allow user to join a private chat room
+        $("#join_private_room_btn").click(function(){
+          var room_name = $("#join_private_room_name").val();
+          var pwd = $("#join_room_password").val();
+          if (/\S/.test(room_name)) {
+            socketio.emit("join_room", room_name, pwd);
+            socketio.on("check_ban_user", function(banned) {
+              if (banned) {
+                alert("You are banned from this chat room!");
+                return;
+              }
+            });
+            socketio.on("check_room_avail", function(avail){
+              if (avail) {
+                enterRoom();
+                ready = true;
+              } else {
+                alert("Invalid room name and/or password!");
+              }
+            });
+          } else {
+            alert("Enter a room name first!");
+          }
+        });
+
+        // allow user to send messages
+        $("#send_msg_btn").click(function(){
+          sendMessage(socketio);
+        });
+        // allow user to send messages
+        $("#msg_input").keypress(function(e){
+          if(e.which == 13) {
+            sendMessage(socketio);
+          }
+        });
+
+        // allow owner to remove specific user in the room
+        $("#remove_user_btn").click(function() {
+          var who = $("#remove_user_name").val();
+          if (/\S/.test(who)) {
+            socketio.emit("remove_bad_user", who);
+          }
+        });
+        // allow owner to ban spcific user
+        $("#ban_user_btn").click(function() {
+          var who = $("#ban_user_name").val();
+          socketio.emit("ban_bad_user", who);
+        });
+
+        // allow user to leave the room
+        $("#leave_room_btn").click(function() {
+          socketio.emit("leave_room");
+          leaveRoom();
+        });
+
+        // allow user to see the list of chat rooms
+        socketio.on("update_rooms", function(rooms){
+          if(ready) {
+            $("#rooms").empty();
+            $.each(rooms, function(roomID, room) {
+              if (room["password"] == "") {
+                $("#rooms").append("<li>" + room["name"] + "</li>");
+              } else {
+                $("#rooms").append("<li><strong>[private]</strong> " + room["name"] + "</li>");
+              }
+            });
+          }
+        });
+        // update message in the chat room
+        socketio.on("update", function(data) {
+          if(ready)
+            $("#msgs").append("<li>" + data + "</li>");
+        });
+        // update users in the chat room 
+        socketio.on("update_users", function(room){
+          if(ready) {
+            $("#users").empty();
+            var room_users = room["users"];
+            for (var i=0; i<room_users.length; i++) {
+                $('#users').append("<li>" + room_users[i] + "</li>");
+            };
+          }
+        });
+        // update on public and private message
+        socketio.on("message_to_client", function(who, msg, avatar, isPrivate){
+          if(ready) {
+            if(isPrivate){
+              $("#msgs").append("<li><img src='" + avatar + "'><strong>[private message] " + who + "</strong>: " + msg + "</li>");
+            } else {
+              $("#msgs").append("<li><img src='" + avatar + "'><strong>" + who + "</strong>: " + msg + "</li>");
+            }
+          }
+        });
+        socketio.on("disconnect", function(){
+          $("#msgs").append("The chat room is not available");
+          $("#msg_input").attr("disabled", "disabled");
+          $("#send_msg_btn").attr("disabled", "disabled");
+        });
+        // clear the old room chat history
+        socketio.on("clear_chat", function(){
+          $("#msgs").empty();
+        });
+        // return room page when user got kicked out from a room
+        socketio.on("got_removed", function(){
+          leaveRoom();
+        });
+      });
+      
+      function joinUser(socketio) {
+        var name = $("#name").val();
+        // non empty username
+        if (/\S/.test(name)) {
+          socketio.emit("check_join", name);
+          socketio.on("return_check_join", function(users) {
+            var existed_names = $.map(users, function(existed_name, userID) { 
+              return existed_name["username"];
+            });
+            // do not allow repeated username
+            if ($.inArray(name, existed_names) == -1) {
+              var avatar_img = $("input[name=avatar]:checked").val();
+              socketio.emit("join", name, avatar_img);
+              $(".user_join").hide();
+              $(".room_manage").show();
+              $(".rooms").show();
+              ready = true;
+            } else {
+              alert("Username already exist!");
+            }
+          });
+        } else {
+          alert("Enter a name first!");
+        }
+      }
+      function sendMessage(socketio) {
+        var msg = $("#msg_input").val();
+        if (/\S/.test(msg)){
+          // send public message
+          if($("input[name=msg_privacy]:checked").val() == "public"){
+            socketio.emit("message_to_server", msg);
+          }
+          // send private message to specific user
+          else if($("input[name=msg_privacy]:checked").val() == "private"){
+            var private_username = $("#private_msg_username").val();
+            socketio.emit("private_message_to_server", msg, private_username);
+          }
+          $("#msg_input").val("");
+        }
+      }
+      function enterRoom() {
+        // update html when user enters a room
+        $(".msgs").show();
+        $(".users").show();
+        $(".leave_room").show();
+        $(".send_msg").show();
+        $(".rooms").hide();
+        $(".room_manage").hide();
+        $("#msg_input").focus();
+      }
+      function leaveRoom() {
+        // update html when user leaves a room
+        $(".msgs").hide();
+        $(".users").hide();
+        $(".leave_room").hide();
+        $(".send_msg").hide();
+        $(".user_manage").hide();
+        $(".rooms").show();
+        $(".room_manage").show();
+      }
+
+    </script>
+  </head>
+  <body>
+    <div class="user_join">
+      <form name="join">
+        <h1>Let's Chat!</h1>
+        <strong>Enter A Nickname:</strong><input type="text" name="name" id="name"/><br><br>
+        <strong>Choose A Avatar:</strong><input type="radio" name="avatar" value="http://mricons.com/uploads/icon_sets/471/icons/127355/thumb/64x64.png" checked="checked"><img src="http://mricons.com/uploads/icon_sets/471/icons/127355/thumb/64x64.png">
+        <input type="radio" name="avatar" value="http://mricons.com/uploads/icon_sets/471/icons/127361/thumb/64x64.png"><img src="http://mricons.com/uploads/icon_sets/471/icons/127361/thumb/64x64.png">
+        <input type="radio" name="avatar" value="http://mricons.com/uploads/icon_sets/471/icons/127354/thumb/64x64.png"><img src="http://mricons.com/uploads/icon_sets/471/icons/127354/thumb/64x64.png">
+        <input type="radio" name="avatar" value="http://mricons.com/uploads/icon_sets/471/icons/127358/thumb/64x64.png"><img src="http://mricons.com/uploads/icon_sets/471/icons/127358/thumb/64x64.png">
+        <input type="radio" name="avatar" value="http://mricons.com/uploads/icon_sets/471/icons/127352/thumb/64x64.png"><img src="http://mricons.com/uploads/icon_sets/471/icons/127352/thumb/64x64.png"><br><br>
+        <button type="button" id="join_btn">Start Chatting</button>
+      </form>
+    </div>
+    <div class="leave_room">
+      <form name="leave">
+        <button type="button" id="leave_room_btn">Leave the room</button>
+      </form>
+    </div>
+    <div class="send_msg">
+      <form>
+      <input type="text" id="msg_input"/>
+      <button id="send_msg_btn">Send</button>
+      <input type="radio" name="msg_privacy" value="public" checked="checked"> Public message
+      <input type="radio" name="msg_privacy" value="private"> Private message to:
+      <input type="text" id="private_msg_username"/>
+      </form>
+    </div>
+    <div class="room_manage">
+      <form id="join_room">
+        <strong>Join Public Room</strong><br>
+        Name:<input type="text" name="join_public_room_name" id="join_public_room_name"/>
+        <button type="button" id="join_public_room_btn">Join</button><br>
+        <strong>Join Private Room</strong><br>
+        Name:<input type="text" name="join_private_room_name" id="join_private_room_name"/>
+        Password:<input type="password" id="join_room_password"/>
+        <button type="button" id="join_private_room_btn">Join</button><br>
+      </form>
+      <br><br>
+      <form id="add_room">
+        <strong>Create Public Room</strong><br>
+        Name:<input type="text" name="add_public_room_name" id="add_public_room_name"/>
+        <button type="button" id="add_public_room_btn">Create</button><br>
+        <strong>Create Private Room</strong><br>
+        Name:<input type="text" name="add_private_room_name" id="add_private_room_name"/>
+        Password:<input type="password" id="add_room_password"/>
+        <button type="button" id="add_private_room_btn">Create</button>
+      </form>
+    </div>
+    <div class="user_manage">
+      <form id="remove_user">
+        Remove user name:<input type="text" name="remove_user_name" id="remove_user_name"/>
+        <button type="button" id="remove_user_btn">Remove</button>
+      </form>
+      <br>
+      <form id="ban_user">
+        Ban user name:<input type="text" name="ban_user_name" id="ban_user_name"/>
+        <button type="button" id="ban_user_btn">Ban</button>
+      </form>
+    </div>
+    <div class="show">
+      <div class="users">
+        <h4>User(s) Online</h4>
+        <ul id="users"></ul>
+      </div>
+      <div class="rooms">
+        <h1>Room List</h1>
+        <ul id="rooms"></ul>
+      </div>
+      <div class="msgs"> 
+        <ul id="msgs"></ul>
+      </div>
+    </div>
+  </body>
+</html>
